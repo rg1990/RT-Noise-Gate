@@ -3,7 +3,7 @@ Driver code for the noise gate using the state pattern.
 
 '''
 
-from noise_gate_state_pattern import AudioConfig, Context
+from noise_gate import AudioConfig, Context
 from gate_states import ClosedState
 import numpy as np
 import audiofile
