@@ -1,6 +1,6 @@
 # Real Time Noise Gate
 
-## Overview
+
 Currently a work in progress, this is a prototype [noise gate](https://en.wikipedia.org/wiki/Noise_gate) application built using Python. <br>
 The purpose of this project is to build a prototype in Python before implementing the noise gate as a VST plugin using C++ with the JUCE framework.
 
