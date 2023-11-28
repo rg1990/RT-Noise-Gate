@@ -14,8 +14,8 @@ The purpose of this project is to build a prototype in Python before implementin
 
 ## To Do
 - Fix the implementation of the hold parameter. The definition is currently wrong.
-- Handle threshold and signal values in dBFS rather than amplitude/magnitude.
-- Process blocks of audio in a stream (`sounddevice.OutputStream`) rather than processing the whole array at once.
+- ~~Handle threshold and signal values in dBFS rather than amplitude/magnitude.~~
+- ~~Process blocks of audio in a stream (`sounddevice.OutputStream`) rather than processing the whole array at once.~~
 - Build a GUI with noise gate controls, a waveform viewer/navigator with playhead, and real-time scrolling display of unprocessed & processed audio. Simple wireframe shown below.
 
 ![noise_gate_gui_wireframe](https://github.com/rg1990/RT-Noise-Gate/assets/70291897/27502eb8-a10a-40f4-ad82-b2b156baef48)
