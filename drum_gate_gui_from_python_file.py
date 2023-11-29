@@ -1,5 +1,6 @@
 # Load the noise gate UI from the Python file created by pyuic5
 
+from PyQt5 import QtGui
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
 
@@ -18,15 +19,116 @@ from noise_gate import Context, AudioConfig
 from player import Player, PlaybackState
 import queue
 
-class MplWidget(QWidget):
+
+def zoom_factory(ax, base_scale=2):
+    def zoom_fun(event):
+        print(type(event))
+        # get the current x and y limits
+        cur_xlim = ax.get_xlim()
+        xdata = event.xdata # get event x location
+        if event.button == 'down':
+            # zoom in
+            scale_factor = 1/base_scale
+        elif event.button == 'up':
+            # zoom out
+            scale_factor = base_scale
+        
+        ax.set_xlim([xdata - (xdata-cur_xlim[0]) / scale_factor, xdata + (cur_xlim[1]-xdata) / scale_factor])
+        ax.figure.canvas.draw() # Re-draw
+
+    fig = ax.get_figure() # get the figure of interest
+    # attach the call back
+    fig.canvas.mpl_connect('scroll_event', zoom_fun)
+
+    #return the function
+    return zoom_fun
+
+
+
+# class MplWidget(QWidget):
   
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.fig = Figure(figsize=(5, 5))
+#     def __init__(self, parent=None):
+#         super().__init__(parent)
+#         self.fig = Figure(figsize=(5, 5))
+#         self.canvas = FigureCanvasQTAgg(self.fig)
+#         layout = QVBoxLayout(self)
+#         layout.addWidget(self.canvas)
+#         self.ax = self.canvas.figure.add_subplot(111)
+
+
+class WaveformNavWidget(QWidget):
+    def __init__(self, player):#, parent=None):
+        super().__init__()#parent)
+        
+        self.player = player
+        self.player.display = self
+
+        self.fig = Figure()
         self.canvas = FigureCanvasQTAgg(self.fig)
         layout = QVBoxLayout(self)
         layout.addWidget(self.canvas)
+        self.plot_downsample = 100
         self.ax = self.canvas.figure.add_subplot(111)
+        self.ax.plot(self.player.time_array[::self.plot_downsample],
+                     self.player.audio_array[::self.plot_downsample],
+                     lw=1, color="#00ADB5")
+        # Add a playhead
+        self.line_playhead = self.ax.axvline(0, linewidth=1, color='red')
+
+        # Remove the border around the figure
+        # for spine in self.ax.spines.values():
+        #     spine.set_visible(False)
+
+        self.fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
+        self.fig.set_facecolor("#f0f0f0")
+        self.ax.set_facecolor("#222831")
+        self.ax.set_yticks([])
+
+        # Implement the zoom and pan functions on self.ax
+        self.f = zoom_factory(self.ax, base_scale=1.33)
+        
+        self.connect_events()
+
+    
+    def connect_events(self):
+        self.fig.canvas.mpl_connect('button_press_event', self.move_playhead_onclick)
+    
+    
+    def move_playhead_onclick(self, event):
+        # Check the click happened inside self.ax
+        # Don't update the position if zoom or pan tools are enabled
+        if event.inaxes in [self.ax] and not self.ax.get_navigate_mode():
+            xpos = int(event.xdata)
+            # Position validation
+            if xpos <= 0:
+                xpos = 0
+            elif xpos >= len(self.player.audio_array):
+                xpos = len(self.player.audio_array)
+            
+            # Set the new position of the playhead line
+            self.set_playhead_position(xpos)
+            
+            # Update the player with the new starting position
+            self.player.set_start_idx(xpos)
+            
+            
+    def set_playhead_position(self, xpos):
+        # Set the new position of the playhead line
+        self.player.playhead_idx = xpos
+        self.line_playhead.set_xdata([xpos, xpos])
+        #self.canvas.draw()
+        self.canvas.blit()
+
+
+    def update_plot(self, frame):
+        ''' Passed to FuncAnimation, used to update the playhead position while playing '''
+        
+        # We only need to update the position if the player is playing
+        if self.player.playing:
+            self.line_playhead.set_xdata([self.player.playhead_idx, self.player.playhead_idx])
+
+        return self.ax.get_lines()
+    
 
 
 class ScrollingGatedAudioWidget(QWidget):
@@ -36,7 +138,7 @@ class ScrollingGatedAudioWidget(QWidget):
         self.player = player
         self.fig = Figure(figsize=(5, 5))
         self.canvas = FigureCanvasQTAgg(self.fig)
-        self.ax = self.canvas.figure.add_subplot(111)
+        self.ax = self.fig.add_subplot(111)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.canvas)
@@ -46,7 +148,6 @@ class ScrollingGatedAudioWidget(QWidget):
         self.fig.set_facecolor("#f0f0f0")
         self.ax.set_facecolor("#222831")
         
-
         # Downsample factor to plot fewer points
         self.downsample = 50
         # How many milliseconds of audio will fit in the scrolling display
@@ -62,7 +163,7 @@ class ScrollingGatedAudioWidget(QWidget):
         self.ungated_data = np.zeros(self.length)
         
         # Plot the threshold line on top of the gated/ungated lines
-        self.thresh_line = self.ax.axhline(-20, color='red')
+        self.thresh_line = self.ax.axhline(self.player.noise_gate.thresh, color='red')
         
         # Set up the plot limits and appearance
         self.ax.set_ylim([-60, 0])
@@ -115,6 +216,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Set up some audio things
         self.audio_config = AudioConfig(fs=44100, blocksize=1024)
         audio_data, _ = audiofile.read("data/snare_test.wav")
+        #time_arr = np.arange(len(audio_data))
         # Slice audio if using a longer file
         #audio_data = audio_data[160*self.audio_config.fs : 165*self.audio_config.fs]
         self.player = Player(self.audio_config, audio_array=audio_data)
@@ -124,11 +226,25 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.gate_thresh_canvas = ScrollingGatedAudioWidget(self.player)#self)
         self.scrolling_plot_layout.addWidget(self.gate_thresh_canvas)
 
-        self.ani = FuncAnimation(self.gate_thresh_canvas.fig,
-                                self.gate_thresh_canvas.update_plot,
-                                interval=20,
-                                blit=True,
-                                cache_frame_data=False)
+        # Create and add the waveform navigator widget
+        self.waveform_canvas = WaveformNavWidget(self.player)
+        self.waveform_nav_layout.addWidget(self.waveform_canvas)
+
+        # Animation for scrolling gated signal
+        self.gate_scroll_ani = FuncAnimation(self.gate_thresh_canvas.fig,
+                                            self.gate_thresh_canvas.update_plot,
+                                            interval=20,
+                                            blit=True,
+                                            cache_frame_data=False)
+        
+
+        # Animation for playhead motion on waveform
+        self.playhead_ani = FuncAnimation(self.waveform_canvas.fig,
+                                            self.waveform_canvas.update_plot,
+                                            interval=20,
+                                            blit=True,
+                                            cache_frame_data=False)
+        
         
         # Group the gate controls
         self.gate_controls = [self.threshold_slider,
@@ -223,7 +339,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def update_lookahead(self, lookahead_val):
         ''' Update the lookahead value of the noise gate '''
-        #print(lookahead_val)
+        # TODO
         pass
 
 
@@ -231,7 +347,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         ''' Listener for key press events '''
         if keyEvent.key() == Qt.Key_Space:
             self.player.play_stop_command()
-            #print(f"Player playing: {self.player.playing}")
+
 
 
 app = QApplication([])
