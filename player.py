@@ -16,12 +16,15 @@ class Player:
     def __init__(self, audio_config, audio_array):
         self.audio_config = audio_config
         self.audio_array = audio_array
+        self.time_array = np.arange(len(audio_array))
         self.q = Queue()    # rename this
         self.stream = self.create_output_stream()
         self.gen = self.audio_generator_function()
         
         self.start_idx = 0
+        self.playhead_idx = 0
         self.playing = False
+        self.display = None
         
         self.pause_behaviour = False
 
@@ -61,7 +64,8 @@ class Player:
                 # Otherwise the space bar acts as a pause function
                 self.set_start_idx(new_start_idx=self.start_idx)
                 # Redraw the playhead
-                #self.display.set_playhead_position(self.start_idx)
+                self.display.set_playhead_position(self.start_idx)
+                self.playhead_idx = self.start_idx
         
         # Stop/pause -> play
         else:
@@ -112,7 +116,9 @@ class Player:
         for i in range(num_arrays):
             
             # Try updating the GUI
-            #self.display.set_playhead_position(start_idx + (i * self.audio_config.blocksize))
+            self.playhead_idx = start_idx + (i * self.audio_config.blocksize)
+            #print(self.playhead_idx)
+            #self.display.set_playhead_position(self.playhead_idx)
             
             # Slice a blocksize sub-array from the main array
             sub_arr = arr[i*self.audio_config.blocksize : (i+1)*self.audio_config.blocksize]
